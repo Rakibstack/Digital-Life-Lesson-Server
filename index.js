@@ -12,6 +12,18 @@ const port = process.env.PORT || 3000
 app.use(cors())
 app.use(express.json())
 
+// firebase admin sdk
+import admin from "firebase-admin";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const serviceAccount = require("./degital-life-lesson.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+;
+
+
 import { MongoClient, ServerApiVersion } from 'mongodb'
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster01.g0bc8bl.mongodb.net/?appName=Cluster01`;
@@ -24,6 +36,29 @@ const client = new MongoClient(uri, {
     }
 });
 
+
+// vefify Firebase Token
+const verifyFirebaseToken = async (req, res, next) => {
+
+    const authorization = req.headers.authorization
+    if (!authorization) {
+        return res.status(401).send('unauthorized access')
+    }
+
+    try {
+        const Token = authorization.split(' ')[1]
+
+        const decoded = await admin.auth().verifyIdToken(Token)
+        req.decoded_email = decoded.email
+
+        next()
+    }
+    catch (error) {
+        // console.log(error);
+        return res.status(401).send('unauthorized access')
+    }
+}
+
 async function run() {
 
     try {
@@ -31,6 +66,7 @@ async function run() {
 
         const db = client.db('life-lessons')
         const userCollection = db.collection('users')
+        const lessonCollection = db.collection('lessons')
 
         // user releted APIS
 
@@ -45,12 +81,12 @@ async function run() {
                     return res.status(409).json({ message: "User already exists" });
                 }
 
-               const newUser = {
-                ...user,
-                 role:'user',
-                isPremium : false,
-                createAt : new Date()
-               }
+                const newUser = {
+                    ...user,
+                    role: 'user',
+                    isPremium: false,
+                    createAt: new Date()
+                }
 
                 const result = await userCollection.insertOne(newUser)
                 res.send(result);
@@ -61,6 +97,35 @@ async function run() {
             }
         })
 
+        app.get('/users/:email/user', verifyFirebaseToken, async (req, res) => {
+
+            const email = req.params.email
+            // console.log(email);
+
+            const user = await userCollection.findOne({
+                email: { $regex: new RegExp(`^${email}$`, 'i') }
+            })
+            console.log('user data', user);
+
+            res.send(user);
+        })
+
+        // lesson related apis
+        app.post('/lessons', verifyFirebaseToken, async (req, res) => {
+
+            const lesson = req.body;
+
+            const user = await userCollection.findOne({ email: lesson.authorEmail });
+
+            if (!user.isPremium && lesson.accessLevel === "premium") {
+                return res.status(403).send({ message: "Upgrade to premium to post premium lessons" });
+            }
+
+            lesson.createdAt = new Date();
+
+            const result = await lessonCollection.insertOne(lesson);
+            res.send({ success: true, message: "Lesson added successfully!", result });
+        })
 
 
 
