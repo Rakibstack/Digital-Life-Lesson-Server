@@ -105,8 +105,7 @@ async function run() {
             const user = await userCollection.findOne({
                 email: { $regex: new RegExp(`^${email}$`, 'i') }
             })
-            console.log('user data', user);
-
+            // console.log('user data', user);
             res.send(user);
         })
 
@@ -126,10 +125,17 @@ async function run() {
             const result = await lessonCollection.insertOne(lesson);
             res.send({ success: true, message: "Lesson added successfully!", result });
         })
+
         app.get('/lessons/public', async (req, res) => {
 
-            const result = await lessonCollection.find({ privacy:"public"}).toArray()
-            res.send(result);
+            const {limit = 0,skip = 0} = req.query
+
+            const result = await lessonCollection.find({ privacy:"public"}).limit(Number(limit)).skip(Number(skip)).toArray()
+
+            const count = await lessonCollection.countDocuments();
+            res.send({
+                result, total:count
+            });
         })
 
 
