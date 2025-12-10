@@ -126,6 +126,11 @@ async function run() {
             const result = await lessonCollection.insertOne(lesson);
             res.send({ success: true, message: "Lesson added successfully!", result });
         })
+        app.get('/lessons/public', async (req, res) => {
+
+            const result = await lessonCollection.find({ privacy:"public"}).toArray()
+            res.send(result);
+        })
 
 
 
