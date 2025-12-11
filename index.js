@@ -22,9 +22,12 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 ;
+import Stripe from 'stripe';
+const strip = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 
 import { MongoClient, ServerApiVersion } from 'mongodb'
+import { log } from 'console';
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster01.g0bc8bl.mongodb.net/?appName=Cluster01`;
 
@@ -47,8 +50,11 @@ const verifyFirebaseToken = async (req, res, next) => {
 
     try {
         const Token = authorization.split(' ')[1]
+        // console.log('access token',Token);
 
         const decoded = await admin.auth().verifyIdToken(Token)
+        // console.log('after decoded',decoded);
+
         req.decoded_email = decoded.email
 
         next()
@@ -128,17 +134,98 @@ async function run() {
 
         app.get('/lessons/public', async (req, res) => {
 
-            const {limit = 0,skip = 0} = req.query
+            try {
+                const { limit = 0, skip = 0, sort, tone, category, search } = req.query
 
-            const result = await lessonCollection.find({ privacy:"public"}).limit(Number(limit)).skip(Number(skip)).toArray()
+                let query = { privacy: "public" }
 
-            const count = await lessonCollection.countDocuments();
-            res.send({
-                result, total:count
-            });
+                if (search) {
+                    query.title = { $regex: search, $options: 'i' }
+                }
+                if (category) {
+                    query.category = category
+                }
+                if (tone) {
+                    query.tone = tone
+                }
+
+                let sortOptions = {}
+                if (sort === 'newest') sortOptions.createdAt = -1;
+                if (sort === 'oldest') sortOptions.createdAt = 1;
+                // if(sort === 'mostSaved') sortOptions.savedCount  = -1;
+
+                const result = await lessonCollection.find(query)
+                    .limit(Number(limit))
+                    .skip(Number(skip))
+                    .sort(sortOptions)
+                    .toArray()
+
+                const count = await lessonCollection.countDocuments();
+                res.send({
+                    result, total: count
+                });
+            } catch (error) {
+                console.log(error);
+
+            }
         })
 
+        app.post('/create-checkout-session', async (req, res) => {
 
+          try{
+              const { price, currency, email } = req.body
+
+            const session = await strip.checkout.sessions.create({
+
+                line_items: [
+
+                    {
+                        price_data: {
+                            currency,
+                            unit_amount: price * 100,
+                            product_data: {
+                                name: "Premium Lifetime Access",
+                            },                    
+                        },
+                        quantity: 1
+                    }
+                ],
+                mode: 'payment',
+                customer_email: email,
+                success_url: `${process.env.SITE_DOMAIN}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/payment/cancel`,
+            })
+            
+            res.send({url:session.url})
+
+          }catch(error){
+            console.log(error);       
+          res.status(500).json({ error: err.message });
+          }
+        })
+
+        app.patch('/payment-success', async (req, res) => {
+
+            const session_id =req.query.session_id
+
+            const session = await strip.checkout.sessions.retrieve(session_id)
+            
+           if(session.payment_status === 'paid'){
+             const email = session.customer_email
+            const query = {}
+            if(email){
+                query.email = email
+            }
+            const update = {
+                $set: {
+                    isPremium : true
+                }
+            }
+            const result = await userCollection.updateOne(query,update)
+            res.send(result);
+           }
+                        
+        })
 
 
         await client.db("admin").command({ ping: 1 });
