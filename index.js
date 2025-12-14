@@ -26,8 +26,7 @@ import Stripe from 'stripe';
 const strip = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 
-import { MongoClient, ServerApiVersion } from 'mongodb'
-import { log } from 'console';
+import { MongoClient, ObjectId, ServerApiVersion } from 'mongodb'
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster01.g0bc8bl.mongodb.net/?appName=Cluster01`;
 
@@ -38,7 +37,6 @@ const client = new MongoClient(uri, {
         deprecationErrors: true,
     }
 });
-
 
 // vefify Firebase Token
 const verifyFirebaseToken = async (req, res, next) => {
@@ -56,7 +54,6 @@ const verifyFirebaseToken = async (req, res, next) => {
         // console.log('after decoded',decoded);
 
         req.decoded_email = decoded.email
-
         next()
     }
     catch (error) {
@@ -122,6 +119,7 @@ async function run() {
 
             const user = await userCollection.findOne({ email: lesson.authorEmail });
 
+
             if (!user.isPremium && lesson.accessLevel === "premium") {
                 return res.status(403).send({ message: "Upgrade to premium to post premium lessons" });
             }
@@ -170,61 +168,101 @@ async function run() {
             }
         })
 
+        app.get('/lessons/:id', verifyFirebaseToken, async (req, res) => {
+
+            try {
+                const id = req.params.id
+                const lessonId = { _id: new ObjectId(id) }
+
+                const lesson = await lessonCollection.findOne(lessonId);
+                if (!lesson) {
+                    return res.status(404).json({ message: 'Lesson not found' });
+                }
+
+                const user = await userCollection.findOne({ email: req.decoded_email })
+                if (!user) {
+                    return res.status(401).json({ message: 'User not found' });
+                }
+
+                if (lesson.accessLevel === 'premium' && !user.isPremium) {
+
+                    return res.status(403).json({ error: 'premium_locked', message: 'Upgrade to view this lesson.' });
+
+                }
+
+                const email = lesson.authorEmail
+                let author = null
+                let totalLesson = 0
+
+                if (email) {
+
+                 author = await userCollection.findOne({ email:email })
+                 totalLesson = await lessonCollection.countDocuments({ authorEmail: email })
+                }
+                res.send({ lesson, author, totalLesson })
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: 'Server error' });
+            }
+
+        })
+
         app.post('/create-checkout-session', async (req, res) => {
 
-          try{
-              const { price, currency, email } = req.body
+            try {
+                const { price, currency, email } = req.body
 
-            const session = await strip.checkout.sessions.create({
+                const session = await strip.checkout.sessions.create({
 
-                line_items: [
+                    line_items: [
 
-                    {
-                        price_data: {
-                            currency,
-                            unit_amount: price * 100,
-                            product_data: {
-                                name: "Premium Lifetime Access",
-                            },                    
-                        },
-                        quantity: 1
-                    }
-                ],
-                mode: 'payment',
-                customer_email: email,
-                success_url: `${process.env.SITE_DOMAIN}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-                cancel_url: `${process.env.SITE_DOMAIN}/payment/cancel`,
-            })
-            
-            res.send({url:session.url})
+                        {
+                            price_data: {
+                                currency,
+                                unit_amount: price * 100,
+                                product_data: {
+                                    name: "Premium Lifetime Access",
+                                },
+                            },
+                            quantity: 1
+                        }
+                    ],
+                    mode: 'payment',
+                    customer_email: email,
+                    success_url: `${process.env.SITE_DOMAIN}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+                    cancel_url: `${process.env.SITE_DOMAIN}/payment/cancel`,
+                })
 
-          }catch(error){
-            console.log(error);       
-          res.status(500).json({ error: err.message });
-          }
+                res.send({ url: session.url })
+
+            } catch (error) {
+                console.log(error);
+                res.status(500).json({ error: err.message });
+            }
         })
 
         app.patch('/payment-success', async (req, res) => {
 
-            const session_id =req.query.session_id
+            const session_id = req.query.session_id
 
             const session = await strip.checkout.sessions.retrieve(session_id)
-            
-           if(session.payment_status === 'paid'){
-             const email = session.customer_email
-            const query = {}
-            if(email){
-                query.email = email
-            }
-            const update = {
-                $set: {
-                    isPremium : true
+
+            if (session.payment_status === 'paid') {
+                const email = session.customer_email
+                const query = {}
+                if (email) {
+                    query.email = email
                 }
+                const update = {
+                    $set: {
+                        isPremium: true
+                    }
+                }
+                const result = await userCollection.updateOne(query, update)
+                res.send(result);
             }
-            const result = await userCollection.updateOne(query,update)
-            res.send(result);
-           }
-                        
+
         })
 
 
