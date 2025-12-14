@@ -70,6 +70,7 @@ async function run() {
         const db = client.db('life-lessons')
         const userCollection = db.collection('users')
         const lessonCollection = db.collection('lessons')
+        const favoriteCollection = db.collection('favorite')
 
         // user releted APIS
 
@@ -196,8 +197,8 @@ async function run() {
 
                 if (email) {
 
-                 author = await userCollection.findOne({ email:email })
-                 totalLesson = await lessonCollection.countDocuments({ authorEmail: email })
+                    author = await userCollection.findOne({ email: email })
+                    totalLesson = await lessonCollection.countDocuments({ authorEmail: email })
                 }
                 res.send({ lesson, author, totalLesson })
 
@@ -206,6 +207,105 @@ async function run() {
                 res.status(500).json({ message: 'Server error' });
             }
 
+        })
+
+        app.patch('/lessons/:id/like', verifyFirebaseToken, async (req, res) => {
+
+            try {
+                const lessonId = req.params.id
+                const email = req.decoded_email
+
+                const lesson = await lessonCollection.findOne({
+                    _id: new ObjectId(lessonId)
+                })
+
+                if (!lesson) {
+                    return res.status(404).send({ message: 'Lesson not found' })
+                }
+
+                const alreadyLiked = lesson.likedBy?.includes(email)
+
+                //  UNLIKE
+                if (alreadyLiked) {
+                    await lessonCollection.updateOne(
+                        { _id: lesson._id },
+                        {
+                            $pull: { likedBy: email },
+                            $inc: { likes: -1 }
+                        }
+                    )
+
+                    return res.send({
+                        liked: false,
+                        likesChange: -1
+                    })
+                }
+
+                //  LIKE
+                await lessonCollection.updateOne(
+                    { _id: lesson._id },
+                    {
+                        $addToSet: { likedBy: email },
+                        $inc: { likes: 1 }
+                    }
+                )
+
+                res.send({
+                    liked: true,
+                    likesChange: 1
+                })
+
+            } catch (err) {
+                res.status(500).send({ error: err.message })
+            }
+        })
+        app.patch('/lessons/:id/favorite', verifyFirebaseToken, async (req, res) => {
+            try {
+                const lessonId = req.params.id
+                const email = req.decoded_email
+
+                const query = {
+                    lessonId,
+                    userEmail: email
+                }
+
+                const alreadyFavorited = await favoriteCollection.findOne(query)
+
+                //  UNSAVE
+                if (alreadyFavorited) {
+                    await favoriteCollection.deleteOne(query)
+
+                    await lessonCollection.updateOne(
+                        { _id: new ObjectId(lessonId) },
+                        { $inc: { favoritesCount: -1 } }
+                    )
+
+                    return res.send({
+                        favorited: false,
+                        countChange: -1
+                    })
+                }
+
+                // SAVE
+                await favoriteCollection.insertOne({
+                    lessonId,
+                    userEmail: email,
+                    createdAt: new Date()
+                })
+
+                await lessonCollection.updateOne(
+                    { _id: new ObjectId(lessonId) },
+                    { $inc: { favoritesCount: 1 } }
+                )
+
+                res.send({
+                    favorited: true,
+                    countChange: 1
+                })
+
+            } catch (error) {
+                res.status(500).send({ error: error.message })
+            }
         })
 
         app.post('/create-checkout-session', async (req, res) => {
