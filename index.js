@@ -54,7 +54,7 @@ const verifyFirebaseToken = async (req, res, next) => {
         // console.log('after decoded', decoded);
 
         req.decoded_email = decoded.email
-        req.photo =decoded.picture
+        req.photo = decoded.picture
         req.name = decoded.name
         next()
     }
@@ -83,6 +83,7 @@ async function run() {
             try {
 
                 const user = req.body;
+                user.email = user.email.toLowerCase()
 
                 const isExist = await userCollection.findOne({ email: user?.email });
                 if (isExist) {
@@ -184,7 +185,7 @@ async function run() {
                     return res.status(404).json({ message: 'Lesson not found' });
                 }
 
-                const user = await userCollection.findOne({ email: req.decoded_email })
+                const user = await userCollection.findOne({ email: req.decoded_email.toLowerCase() })
                 if (!user) {
                     return res.status(401).json({ message: 'User not found' });
                 }
@@ -381,6 +382,83 @@ async function run() {
 
             res.send(comments)
         })
+        app.get('/lessons/:id/related', async (req, res) => {
+            try {
+                const lessonId = req.params.id
+
+                const lesson = await lessonCollection.findOne({ _id: new ObjectId(lessonId) })
+
+                const related = await lessonCollection
+                    .find({ category: lesson.category, _id: { $ne: lesson._id } })
+                    .limit(6)
+                    .toArray()
+
+                res.send(related)
+
+            } catch (err) {
+                console.error(err)
+                res.status(500).send({ error: err.message })
+            }
+        })
+
+        app.get('/lessons/author/:email', async (req, res) => {
+            try {
+                const email = req.params.email
+
+                const lessons = await lessonCollection
+                    .find({
+                        authorEmail: email,
+                        privacy: 'public'
+                    })
+                    .sort({ createdAt: -1 })
+                    .toArray()
+
+                res.send(lessons)
+
+            } catch (err) {
+                res.status(500).send({ error: err.message })
+            }
+        })
+
+        app.get('/my-lessons', verifyFirebaseToken, async (req,res) => {
+
+            const email= req.query.email
+            if(email !== req.decoded_email){
+                return res.status(403).send({message: 'forbidden access'});
+            }
+
+            const result = await lessonCollection.find({authorEmail: email}).toArray()
+            res.send(result)
+        })
+
+        app.patch('/lessons/visibility/:id', verifyFirebaseToken, async (req,res) => {
+
+            const id = req.params.id
+            const {visibility} = req.body
+
+            const query = {_id: new ObjectId(id)}
+
+            const update = {
+                $set: {
+                    privacy : visibility
+                }
+            }
+            const result = await lessonCollection.updateOne(query,update)
+            console.log(result);
+            
+            res.send(result);
+        })
+
+        app.delete('/lessons/delete/:id',verifyFirebaseToken,async (req,res) => {
+
+            const query = {_id: new ObjectId(req.params.id)}
+            const result = await lessonCollection.deleteOne(query)
+            console.log(result);
+            
+            res.send(result);
+        })
+
+
 
 
 
