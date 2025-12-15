@@ -48,16 +48,18 @@ const verifyFirebaseToken = async (req, res, next) => {
 
     try {
         const Token = authorization.split(' ')[1]
-        // console.log('access token',Token);
+        // console.log('access token', Token);
 
         const decoded = await admin.auth().verifyIdToken(Token)
-        // console.log('after decoded',decoded);
+        // console.log('after decoded', decoded);
 
         req.decoded_email = decoded.email
+        req.photo =decoded.picture
+        req.name = decoded.name
         next()
     }
     catch (error) {
-        // console.log(error);
+        console.log(error);
         return res.status(401).send('unauthorized access')
     }
 }
@@ -71,6 +73,8 @@ async function run() {
         const userCollection = db.collection('users')
         const lessonCollection = db.collection('lessons')
         const favoriteCollection = db.collection('favorite')
+        const reportCollection = db.collection('report')
+        const commentCollection = db.collection('comment');
 
         // user releted APIS
 
@@ -307,6 +311,78 @@ async function run() {
                 res.status(500).send({ error: error.message })
             }
         })
+        app.post('/reports', verifyFirebaseToken, async (req, res) => {
+            try {
+                const { lesson, reason } = req.body
+                const lessonId = lesson._id
+                const userEmail = req.decoded_email
+
+                // Prevent duplicate report by same user
+                const exists = await reportCollection.findOne({ lessonId, userEmail })
+                if (exists) {
+                    return res.status(400).send({ message: 'You have already reported this lesson.' })
+                }
+
+                await reportCollection.insertOne({
+                    lessonId,
+                    userEmail,
+                    reason,
+                    createdAt: new Date()
+                })
+
+                await lessonCollection.updateOne(
+                    { _id: new ObjectId(lessonId) },
+                    { $inc: { reportsCount: 1 } }
+                )
+
+                res.send({ success: true })
+
+            } catch (err) {
+                console.error('REPORT ERROR:', err)
+                res.status(500).send({ error: err.message })
+            }
+        })
+
+        app.post('/comments', verifyFirebaseToken, async (req, res) => {
+            try {
+                const { lessonId, text } = req.body
+
+                const comment = {
+                    lessonId,
+                    text,
+                    userPhoto: req.photo,
+                    userName: req.name,
+                    userEmail: req.decoded_email,
+                    createdAt: new Date()
+                }
+
+                await commentCollection.insertOne(comment)
+
+                await lessonCollection.updateOne(
+                    { _id: new ObjectId(lessonId) },
+                    { $inc: { commentsCount: 1 } }
+                )
+
+                res.send({ success: true })
+
+            } catch (err) {
+                console.error('COMMENT ERROR:', err)
+                res.status(500).send({ error: err.message })
+            }
+        })
+
+        app.get('/comments/:lessonId', async (req, res) => {
+            const lessonId = req.params.lessonId
+
+            const comments = await commentCollection
+                .find({ lessonId })
+                .sort({ createdAt: -1 })
+                .toArray()
+
+            res.send(comments)
+        })
+
+
 
         app.post('/create-checkout-session', async (req, res) => {
 
