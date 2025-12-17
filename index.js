@@ -156,7 +156,7 @@ async function run() {
                 let sortOptions = {}
                 if (sort === 'newest') sortOptions.createdAt = -1;
                 if (sort === 'oldest') sortOptions.createdAt = 1;
-                // if(sort === 'mostSaved') sortOptions.savedCount  = -1;
+                if (sort === 'mostSaved') sortOptions.savedCount = -1;
 
                 const result = await lessonCollection.find(query)
                     .limit(Number(limit))
@@ -268,6 +268,9 @@ async function run() {
             try {
                 const lessonId = req.params.id
                 const email = req.decoded_email
+                const lesson = await lessonCollection.
+                    findOne({ _id: new ObjectId(lessonId) })
+
 
                 const query = {
                     lessonId,
@@ -295,6 +298,9 @@ async function run() {
                 await favoriteCollection.insertOne({
                     lessonId,
                     userEmail: email,
+                    title: lesson.title,
+                    category: lesson.category,
+                    tone: lesson.tone,
                     createdAt: new Date()
                 })
 
@@ -420,44 +426,195 @@ async function run() {
             }
         })
 
-        app.get('/my-lessons', verifyFirebaseToken, async (req,res) => {
+        // my lesson releted apis..
 
-            const email= req.query.email
-            if(email !== req.decoded_email){
-                return res.status(403).send({message: 'forbidden access'});
+        app.get('/my-lessons', verifyFirebaseToken, async (req, res) => {
+
+            const email = req.query.email
+            if (email !== req.decoded_email) {
+                return res.status(403).send({ message: 'forbidden access' });
             }
 
-            const result = await lessonCollection.find({authorEmail: email}).toArray()
+            const result = await lessonCollection.find({ authorEmail: email }).toArray()
             res.send(result)
         })
 
-        app.patch('/lessons/visibility/:id', verifyFirebaseToken, async (req,res) => {
+        app.patch('/mylessons/visibility/:id', verifyFirebaseToken, async (req, res) => {
 
             const id = req.params.id
-            const {visibility} = req.body
+            const { visibility } = req.body
 
-            const query = {_id: new ObjectId(id)}
+            const query = { _id: new ObjectId(id) }
 
             const update = {
                 $set: {
-                    privacy : visibility
+                    privacy: visibility
                 }
             }
-            const result = await lessonCollection.updateOne(query,update)
+            const result = await lessonCollection.updateOne(query, update)
             console.log(result);
-            
+
             res.send(result);
         })
 
-        app.delete('/lessons/delete/:id',verifyFirebaseToken,async (req,res) => {
+        app.delete('/mylessons/delete/:id', verifyFirebaseToken, async (req, res) => {
 
-            const query = {_id: new ObjectId(req.params.id)}
+            const query = { _id: new ObjectId(req.params.id) }
             const result = await lessonCollection.deleteOne(query)
             console.log(result);
-            
+
             res.send(result);
         })
 
+        app.patch('/mylesson/update/:id', verifyFirebaseToken, async (req, res) => {
+
+            const id = req.params.id
+            const email = req.decoded_email
+            const updateLesson = req.body
+
+            const filter = {
+                _id: new ObjectId(id),
+                authorEmail: email,
+            }
+
+            const updateData = {
+                $set: {
+                    ...updateLesson,
+                    updatedAt: new Date(),
+                }
+            }
+            const result = await lessonCollection.updateOne(filter, updateData)
+            res.send(result);
+        })
+
+        // favorite releted APIS,
+        app.get("/my-favorites", verifyFirebaseToken, async (req, res) => {
+
+            const email = req.decoded_email
+            const { category, tone } = req.query;
+
+            const query = { userEmail: email };
+
+            if (category) query.category = category;
+            if (tone) query.tone = tone;
+
+            const favorites = await favoriteCollection
+                .find(query)
+                .toArray();
+
+            res.send(favorites);
+        });
+
+        app.delete("/my-favorites/:id", verifyFirebaseToken, async (req, res) => {
+
+            const email = req.decoded_email
+            const id = req.params.id;
+
+            const result = await favoriteCollection.deleteOne({
+                _id: new ObjectId(id),
+                userEmail: email
+            });
+
+            res.send(result);
+        });
+
+        // my profile relared APIS,
+        app.get('/profile/stats', verifyFirebaseToken, async (req, res) => {
+
+            const email = req.decoded_email
+
+            const lessonsCreated = await lessonCollection.countDocuments({
+                authorEmail: email
+            });
+
+            const lessonsSaved = await favoriteCollection.countDocuments({
+                userEmail: email
+            });
+
+            const user = await userCollection.findOne({ email });
+
+            res.send({
+                lessonsCreated,
+                lessonsSaved,
+                isPremium: user?.isPremium || false
+            });
+        });
+
+        app.get('/profile/my-lessons', verifyFirebaseToken, async (req, res) => {
+
+            const email = req.decoded_email;
+            const { sort } = req.query
+
+            const query = {
+                authorEmail: email,
+                privacy: 'public'
+            }
+            let sortOption = {}
+            if (sort === 'newest') {
+                sortOption = { createAt: -1 }
+            }
+            if (sort === 'mostPopular') {
+                sortOption = { likes: -1 }
+            }
+
+            const lessons = await lessonCollection
+                .find(query)
+                .sort(sortOption)
+                .toArray();
+
+            console.log(sort);
+
+            res.send(lessons);
+        });
+
+        // Dashboard stats
+        app.get("/dashboard/stats", verifyFirebaseToken, async (req, res) => {
+            try {
+                const email = req.decoded_email;
+                // console.log(email);
+                
+
+                const totalLessons = await lessonCollection.countDocuments({
+                    authorEmail: email,
+                });
+
+                const savedLessons = await favoriteCollection.countDocuments({
+                    userEmail: email,
+                });
+
+                const publicLessons = await lessonCollection.countDocuments({
+                    authorEmail: email,
+                    privacy: "public",
+                });
+
+                // console.log(totalLessons,savedLessons,publicLessons);
+                
+                res.send({
+                    totalLessons,
+                    savedLessons,
+                    publicLessons,
+                });
+            } catch (error) {
+                res.status(500).send({ message: "Dashboard stats error" });
+            }
+        });
+
+        // Recent lessons
+        app.get("/dashboard/recent-lessons",verifyFirebaseToken, async (req, res) => {
+            try {
+                const email = req.decoded_email;
+
+                const lessons = await lessonCollection
+                    .find({ authorEmail: email })
+                    .sort({ createdAt: -1 })
+                    .limit(5)
+                    .toArray();
+
+                res.send(lessons);
+            } catch (error) {
+                res.status(500).send({ message: "Recent lessons error" });
+            }
+        });
 
 
 
