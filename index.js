@@ -572,7 +572,7 @@ async function run() {
             try {
                 const email = req.decoded_email;
                 // console.log(email);
-                
+
 
                 const totalLessons = await lessonCollection.countDocuments({
                     authorEmail: email,
@@ -588,7 +588,7 @@ async function run() {
                 });
 
                 // console.log(totalLessons,savedLessons,publicLessons);
-                
+
                 res.send({
                     totalLessons,
                     savedLessons,
@@ -600,7 +600,7 @@ async function run() {
         });
 
         // Recent lessons
-        app.get("/dashboard/recent-lessons",verifyFirebaseToken, async (req, res) => {
+        app.get("/dashboard/recent-lessons", verifyFirebaseToken, async (req, res) => {
             try {
                 const email = req.decoded_email;
 
@@ -613,6 +613,108 @@ async function run() {
                 res.send(lessons);
             } catch (error) {
                 res.status(500).send({ message: "Recent lessons error" });
+            }
+        });
+
+        // Weekly analytics
+        app.get("/dashboard/analytics/weekly", verifyFirebaseToken, async (req, res)=>{
+            try {
+                const email = req.decoded_email;
+
+                const lessons = await lessonCollection
+                    .find({ authorEmail: email })
+                    .toArray();
+
+                const weeks = [0, 0, 0, 0];
+
+                lessons.forEach((lesson) => {
+                    const date = new Date(lesson.createdAt);
+                    const week = Math.ceil(date.getDate() / 7) - 1;
+                    if (week >= 0 && week < 4) {
+                        weeks[week]++;
+                    }
+                });
+
+                res.send([
+                    { name: "Week 1", count: weeks[0] },
+                    { name: "Week 2", count: weeks[1] },
+                    { name: "Week 3", count: weeks[2] },
+                    { name: "Week 4", count: weeks[3] },
+                ]);
+            } catch (error) {
+                res.status(500).send({ message: "Analytics error" });
+            }
+        });
+
+        // Admin stats
+        app.get("/dashboard/admin/stats", verifyFirebaseToken, async (req, res) => {
+            try {
+                const totalUsers = await userCollection.countDocuments();
+
+                const totalPublicLessons = await lessonCollection.countDocuments({
+                    privacy: "public",
+                });
+
+                const totalReportedLessons = await reportCollection.countDocuments();
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const todayLessons = await lessonCollection.countDocuments({
+                    createdAt: { $gte: today },
+                });
+
+                res.send({
+                    totalUsers,
+                    totalPublicLessons,
+                    totalReportedLessons,
+                    todayLessons,
+                });
+            } catch {
+                res.status(500).send({ message: "Admin stats error" });
+            }
+        });
+
+        app.get("/dashboard/admin/top-contributors", async (req, res) => {
+            try {
+                const result = await lessonCollection.aggregate([
+                    {
+                        $group: {
+                            _id: "$authorEmail",
+                            totalLessons: { $sum: 1 },
+                        },
+                    },
+                    { $sort: { totalLessons: -1 } },
+                    { $limit: 5 },
+                ]).toArray();
+
+                res.send(result);
+            } catch {
+                res.status(500).send({ message: "Top contributors error" });
+            }
+        });
+
+        app.get("/dashboard/admin/lesson-growth", async (req, res) => {
+            try {
+                const lessons = await lessonCollection.find().toArray();
+
+                const monthly = {};
+
+                lessons.forEach((lesson) => {
+                    const month = new Date(lesson.createdAt).toLocaleString("default", {
+                        month: "short",
+                    });
+                    monthly[month] = (monthly[month] || 0) + 1;
+                });
+
+                const data = Object.keys(monthly).map((key) => ({
+                    name: key,
+                    count: monthly[key],
+                }));
+
+                res.send(data);
+            } catch {
+                res.status(500).send({ message: "Growth error" });
             }
         });
 
