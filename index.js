@@ -350,6 +350,7 @@ async function run() {
 
                 await reportCollection.insertOne({
                     lessonId,
+                    title: lesson.title,
                     userEmail,
                     reason,
                     createdAt: new Date()
@@ -736,6 +737,7 @@ async function run() {
             }
         });
 
+        //user management releted apis 
         app.get('/dashboard/admin/manage-users', verifyFirebaseToken, verifyAdmin, async (req, res) => {
 
             try {
@@ -761,137 +763,205 @@ async function run() {
             }
         });
 
-        app.patch('/dashboard/admin/updateUser/:email',verifyFirebaseToken,verifyAdmin, async (req,res) => {
+        app.patch('/dashboard/admin/updateUser/:email', verifyFirebaseToken, verifyAdmin, async (req, res) => {
 
-          try{
-            const {email} = req.params;
-            console.log(email);
-            
-            const result = await userCollection.updateOne(
-                {email},
-                {
-                    $set: {
-                        role: 'admin'
+            try {
+                const { email } = req.params;
+                console.log(email);
+
+                const result = await userCollection.updateOne(
+                    { email },
+                    {
+                        $set: {
+                            role: 'admin'
+                        }
                     }
-                }
-            )
-            console.log(result);   
-            res.send(result)
-          }
-          catch(error){
-            console.log(error)
-            res.status(500).send({message: 'internal server error'})
-            
-          }
+                )
+                console.log(result);
+                res.send(result)
+            }
+            catch (error) {
+                console.log(error)
+                res.status(500).send({ message: 'internal server error' })
+
+            }
         })
 
-        app.delete('/dashboard/admin/delete', verifyFirebaseToken,verifyAdmin, async (req,res) => {
+        app.delete('/dashboard/admin/delete', verifyFirebaseToken, verifyAdmin, async (req, res) => {
 
-           try{
-            const {email} = req.query
-            const result = await userCollection.deleteOne({email})
-            res.send(result)
-           }
-           catch(err) {
-            console.log(err)
-            res.status(500).send({ message: 'Internal server error' });
-            
-           }
+            try {
+                const { email } = req.query
+                const result = await userCollection.deleteOne({ email })
+                res.send(result)
+            }
+            catch (err) {
+                console.log(err)
+                res.status(500).send({ message: 'Internal server error' });
+
+            }
         })
 
+        // manage lesson releted apis
         app.get(
             "/dashboard/admin/manage-lessons",
             verifyFirebaseToken,
             verifyAdmin,
             async (req, res) => {
-              const { category, privacy, flagged } = req.query;
-          
-              let query = {};
-          
-              if (category) query.category = category;
-              if (privacy) query.privacy = privacy;
-              if (flagged){
-                query.reportsCount = { $gt: 0 };
-              }
-          
-              const lessons = await lessonCollection
-                .find(query)
-                .sort({ createdAt: -1 })
-                .toArray();
-          
-              res.send(lessons);
+                const { category, privacy, flagged } = req.query;
+
+                let query = {};
+
+                if (category) query.category = category;
+                if (privacy) query.privacy = privacy;
+                if (flagged) {
+                    query.reportsCount = { $gt: 0 };
+                }
+
+                const lessons = await lessonCollection
+                    .find(query)
+                    .sort({ createdAt: -1 })
+                    .toArray();
+
+                res.send(lessons);
             }
-          );
-          
-          app.get(
+        );
+
+        app.get(
             "/dashboard/admin/lesson-stats",
             verifyFirebaseToken,
             verifyAdmin,
             async (req, res) => {
-          
-              const publicCount = await lessonCollection.countDocuments({
-                privacy: "public",
-              });
-          
-              const privateCount = await lessonCollection.countDocuments({
-                privacy: "private",
-              });
-          
-              const flaggedCount = await lessonCollection.countDocuments({
-                reportsCount: { $gt: 0 }
-              });
-          
-              res.send({
-                publicCount,
-                privateCount,
-                flaggedCount
-              });
-            }
-          );
 
-          app.delete(
+                const publicCount = await lessonCollection.countDocuments({
+                    privacy: "public",
+                });
+
+                const privateCount = await lessonCollection.countDocuments({
+                    privacy: "private",
+                });
+
+                const flaggedCount = await lessonCollection.countDocuments({
+                    reportsCount: { $gt: 0 }
+                });
+
+                res.send({
+                    publicCount,
+                    privateCount,
+                    flaggedCount
+                });
+            }
+        );
+
+        app.delete(
             "/dashboard/admin/lesson/:id",
             verifyFirebaseToken,
             verifyAdmin,
             async (req, res) => {
-              const id = new ObjectId(req.params.id);
-              const result = await lessonCollection.deleteOne({ _id: id });
-              res.send(result);
+                const id = new ObjectId(req.params.id);
+                const result = await lessonCollection.deleteOne({ _id: id });
+                res.send(result);
             }
-          );
-          app.patch(
+        );
+        app.patch(
             "/dashboard/admin/lesson/feature/:id",
             verifyFirebaseToken,
             verifyAdmin,
             async (req, res) => {
-              const id = new ObjectId(req.params.id);
-          
-              const result = await lessonCollection.updateOne(
-                { _id: id },
-                { $set: { isFeatured: true } }
-              );
-          
-              res.send(result);
+                const id = new ObjectId(req.params.id);
+
+                const result = await lessonCollection.updateOne(
+                    { _id: id },
+                    { $set: { isFeatured: true } }
+                );
+
+                res.send(result);
             }
-          );
-        
-          app.patch(
+        );
+
+        app.patch(
             "/dashboard/admin/lesson/review/:id",
             verifyFirebaseToken,
             verifyAdmin,
             async (req, res) => {
-              const id = new ObjectId(req.params.id);
-          
-              const result = await lessonCollection.updateOne(
-                { _id: id },
-                { $set: { isReviewed: true } }
-              );
-          
-              res.send(result);
+                const id = new ObjectId(req.params.id);
+
+                const result = await lessonCollection.updateOne(
+                    { _id: id },
+                    { $set: { isReviewed: true } }
+                );
+
+                res.send(result);
             }
-          );
-          
-          
+        );
+
+        // reported lesson releted apis
+        app.get(
+            "/dashboard/admin/reported-lessons",
+            verifyFirebaseToken,
+            verifyAdmin,
+            async (req, res) => {
+                const result = await reportCollection.aggregate([
+                    {
+                        $group: {
+                            _id: "$lessonId",
+                            title: { $first: "$title" },
+                            reportCount: { $sum: 1 }
+                        }
+                    },
+                    { $sort: { reportCount: -1 } }
+                ]).toArray();
+
+                res.send(result);
+            }
+        );
+
+        app.get(
+            "/dashboard/admin/lesson-reports/:lessonId",
+            verifyFirebaseToken,
+            verifyAdmin,
+            async (req, res) => {
+                const lessonId = req.params.lessonId;
+
+                const reports = await reportCollection
+                    .find({ lessonId })
+                    .sort({ createdAt: -1 })
+                    .toArray();
+
+                // console.log('reported lesson',reports);
+                res.send(reports);
+            }
+        );
+
+        app.delete(
+            "/dashboard/admin/reported-lessons/ignore/:lessonId",
+            verifyFirebaseToken,
+            verifyAdmin,
+            async (req, res) => {
+                const lessonId = req.params.lessonId;
+
+                const result = await reportCollection.deleteMany({ lessonId });
+                res.send(result);
+            }
+        );
+        app.delete(
+            "/dashboard/admin/reported-lessons/delete-lesson/:lessonId",
+            verifyFirebaseToken,
+            verifyAdmin,
+            async (req, res) => {
+                const lessonId = new ObjectId(req.params.lessonId);
+
+                await lessonCollection.deleteOne({ _id: lessonId });
+                await reportCollection.deleteMany({ lessonId: lessonId.toString() });
+
+                res.send({ success: true });
+            }
+        );
+
+
+
+
+
+
 
 
 
