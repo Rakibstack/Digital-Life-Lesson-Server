@@ -16,7 +16,10 @@ app.use(express.json())
 import admin from "firebase-admin";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const serviceAccount = require("./degital-life-lesson.json");
+
+// const serviceAccount = require("./degital-life-lesson.json");
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -67,7 +70,6 @@ const verifyFirebaseToken = async (req, res, next) => {
 async function run() {
 
     try {
-        await client.connect();
 
         const db = client.db('life-lessons')
         const userCollection = db.collection('users')
@@ -506,6 +508,91 @@ async function run() {
             res.send(result);
         })
 
+        app.get('/featured-lessons', async (req, res) => {
+
+            try {
+                const featuredLessons = await lessonCollection
+                    .find({
+                        isFeatured: true,
+                    })
+                    .sort({ createdAt: -1 })
+                    .limit(4)
+                    .toArray();
+                console.log(featuredLessons);
+
+                res.send(featuredLessons);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ message: 'internal server error' })
+            }
+        });
+
+        // top contributors Api
+        app.get("/top-contributors", async (req, res) => {
+            try {
+                const result = await lessonCollection.aggregate([
+                    {
+                        $group: {
+                            _id: "$authorEmail",
+                            name: { $first: "$authorName" },
+                            image: { $first: "$authorPhoto" },
+                            lessons: { $sum: 1 }
+                        }
+                    },
+                    { $sort: { lessons: -1 } },
+                    { $limit: 4 }
+                ]).toArray();
+
+                // Rank assign
+                const ranked = result.map((user, index) => ({
+                    ...user,
+                    rank:
+                        index === 0 ? "🥇" :
+                            index === 1 ? "🥈" :
+                                index === 2 ? "🥉" : "⭐"
+                }));
+
+                res.send(ranked);
+            } catch (error) {
+                res.status(500).send({ message: "Something went wrong" });
+            }
+        });
+
+        // most favorite lesson
+        app.get("/most-saved-lessons", async (req, res) => {
+
+            try {
+                const result = await lessonCollection.aggregate([
+                    {
+                        $match: {
+                            privacy: "public",
+                            accessLevel: "free"
+                        }
+                    },
+                    {
+                        $sort: { favoritesCount: -1 }
+                    },
+                    {
+                        $limit: 4
+                    },
+                    {
+                        $project: {
+                            title: 1,
+                            author: "$authorName",
+                            thumbnail: "$authorPhoto",
+                            saves: "$favoritesCount"
+                        }
+                    }
+                ]).toArray();
+
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch most saved lessons" });
+            }
+        });
+
+
+
         // favorite releted APIS,
         app.get("/my-favorites", verifyFirebaseToken, async (req, res) => {
 
@@ -581,7 +668,7 @@ async function run() {
                 .sort(sortOption)
                 .toArray();
 
-            console.log(sort);
+            // console.log(sort);
 
             res.send(lessons);
         });
@@ -959,14 +1046,6 @@ async function run() {
 
 
 
-
-
-
-
-
-
-
-
         app.post('/create-checkout-session', async (req, res) => {
 
             try {
@@ -1025,8 +1104,8 @@ async function run() {
         })
 
 
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
 
         // await client.close();

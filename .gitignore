@@ -1,3 +1,4 @@
 node_modules
 .env
 degital-life-lesson.json
+.vercel
